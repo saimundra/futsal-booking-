@@ -56,6 +56,36 @@ export async function loginUser(data) {
   return res.json();
 }
 
+export async function googleAuthUser(credential) {
+  const res = await fetch(`${API_BASE}/users/google-auth/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function verifyEmailOtp(data) {
+  const res = await fetch(`${API_BASE}/users/verify-email-otp/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function resendEmailOtp(data) {
+  const res = await fetch(`${API_BASE}/users/resend-email-otp/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function fetchFutsals(params = {}) {
   const url = new URL(`${API_BASE}/futsals/`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));

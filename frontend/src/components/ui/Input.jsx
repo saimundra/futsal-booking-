@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "../../utils/cn";
+import Icon from "../AppIcon";
 
 const Input = React.forwardRef(({
     className,
@@ -8,6 +9,7 @@ const Input = React.forwardRef(({
     description,
     error,
     required = false,
+    showPasswordToggle = false,
     id,
     ...props
 }, ref) => {
@@ -50,6 +52,9 @@ const Input = React.forwardRef(({
     }
 
     // For regular inputs with wrapper structure
+    const [isPasswordVisible, setIsPasswordVisible] = React.useState(false);
+    const resolvedType = showPasswordToggle && type === "password" && isPasswordVisible ? "text" : type;
+
     return (
         <div className="space-y-2">
             {label && (
@@ -65,17 +70,31 @@ const Input = React.forwardRef(({
                 </label>
             )}
 
-            <input
-                type={type}
-                className={cn(
-                    baseInputClasses,
-                    error && "border-destructive focus-visible:ring-destructive",
-                    className
+            <div className="relative">
+                <input
+                    type={resolvedType}
+                    className={cn(
+                        baseInputClasses,
+                        showPasswordToggle && type === "password" && "pr-10",
+                        error && "border-destructive focus-visible:ring-destructive",
+                        className
+                    )}
+                    ref={ref}
+                    id={inputId}
+                    {...props}
+                />
+
+                {showPasswordToggle && type === "password" && (
+                    <button
+                        type="button"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => setIsPasswordVisible((prev) => !prev)}
+                        aria-label={isPasswordVisible ? "Hide password" : "Show password"}
+                    >
+                        <Icon name={isPasswordVisible ? "EyeOff" : "Eye"} size={18} />
+                    </button>
                 )}
-                ref={ref}
-                id={inputId}
-                {...props}
-            />
+            </div>
 
             {description && !error && (
                 <p className="text-sm text-muted-foreground">

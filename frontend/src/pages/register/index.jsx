@@ -18,7 +18,7 @@ const Register = () => {
         <RegistrationForm />
         <div className="text-center pt-4">
           <button
-            className="text-primary underline hover:text-primary/80 transition-colors text-sm"
+            className="text-primary hover:text-primary/80 transition-colors text-sm"
             onClick={() => window.location.href = '/'}
           >
             ← Back to Home

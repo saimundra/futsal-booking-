@@ -12,7 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'phone', 
-            'role', 'profile_photo', 'bio', 'location', 'date_of_birth',
+            'role', 'email_verified', 'profile_photo', 'bio', 'location', 'date_of_birth',
             'email_notifications', 'sms_notifications', 'push_notifications',
             'preferred_court_type', 'preferred_time_slot', 'default_players',
             'created_at', 'updated_at'
@@ -28,7 +28,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['email', 'username', 'first_name', 'last_name', 'phone', 'role', 'password', 'password2']
+        fields = ['email', 'username', 'first_name', 'last_name', 'phone', 'password', 'password2']
     
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
@@ -37,7 +37,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         validated_data.pop('password2')
-        role = validated_data.pop('role', 'player')
         user = User.objects.create_user(
             username=validated_data.get('username'),
             email=validated_data['email'],
@@ -45,9 +44,38 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', ''),
             phone=validated_data.get('phone', ''),
             password=validated_data['password'],
-            role=role
+            role='player'
         )
         return user
+
+
+class AdminUserManageSerializer(serializers.ModelSerializer):
+    """Serializer used by admins to manage users and roles."""
+
+    password = serializers.CharField(write_only=True, required=False, validators=[validate_password])
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name', 'phone',
+            'role', 'is_active', 'password', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        if not password:
+            raise serializers.ValidationError({'password': 'Password is required when creating a user.'})
+        return User.objects.create_user(password=password, **validated_data)
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
 
 
 class UserLoginSerializer(serializers.Serializer):
@@ -55,6 +83,25 @@ class UserLoginSerializer(serializers.Serializer):
     
     email = serializers.EmailField(required=True)
     password = serializers.CharField(required=True, write_only=True)
+
+
+class GoogleAuthSerializer(serializers.Serializer):
+    """Serializer for Google auth token exchange."""
+
+    credential = serializers.CharField(required=True)
+
+
+class VerifyEmailOtpSerializer(serializers.Serializer):
+    """Serializer for verifying signup OTP."""
+
+    email = serializers.EmailField(required=True)
+    otp = serializers.CharField(required=True, min_length=6, max_length=6)
+
+
+class ResendEmailOtpSerializer(serializers.Serializer):
+    """Serializer for resending signup OTP."""
+
+    email = serializers.EmailField(required=True)
 
 
 class ChangePasswordSerializer(serializers.Serializer):

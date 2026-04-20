@@ -21,9 +21,7 @@ const RoleBasedNavigation = ({ userRole = 'player', onLogout }) => {
   ];
 
   const adminNavItems = [
-    { label: 'Dashboard', path: '/futsal-owner-dashboard', icon: 'LayoutDashboard' },
-    { label: 'Manage Bookings', path: '/booking-management', icon: 'Settings' },
-    { label: 'Court Schedule', path: '/court-schedule-management', icon: 'Calendar' }
+    { label: 'Dashboard', path: '/admin', icon: 'LayoutDashboard' }
   ];
 
   let navItems = playerNavItems;

@@ -4,12 +4,20 @@ import Icon from '../../../components/AppIcon';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import { Checkbox } from '../../../components/ui/Checkbox';
-import { registerUser } from '../../../services/api';
+import GoogleAuthButton from '../../../components/ui/GoogleAuthButton';
+import { useToast } from '../../../components/animations/Toast';
+import { registerUser, googleAuthUser, verifyEmailOtp, resendEmailOtp } from '../../../services/api';
 
 const RegistrationForm = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isOtpLoading, setIsOtpLoading] = useState(false);
+  const [isResendingOtp, setIsResendingOtp] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [formData, setFormData] = useState({
     fullName: '',
     username: '', // NEW
@@ -17,7 +25,6 @@ const RegistrationForm = () => {
     phone: '',
     password: '',
     confirmPassword: '',
-    role: 'player',
     emailNotifications: true,
     smsNotifications: false,
     termsAccepted: false
@@ -156,20 +163,65 @@ const RegistrationForm = () => {
     setErrors({});
   };
 
+  const mapRegistrationApiErrors = (rawMessage) => {
+    let parsed = null;
+
+    try {
+      parsed = JSON.parse(rawMessage);
+    } catch {
+      return { api: rawMessage || 'Registration failed. Please try again.' };
+    }
+
+    const mapped = {};
+
+    if (Array.isArray(parsed?.email) && parsed.email[0]) {
+      mapped.email = parsed.email[0];
+    }
+    if (Array.isArray(parsed?.username) && parsed.username[0]) {
+      mapped.username = parsed.username[0];
+    }
+    if (Array.isArray(parsed?.phone) && parsed.phone[0]) {
+      mapped.phone = parsed.phone[0];
+    }
+    if (Array.isArray(parsed?.password) && parsed.password[0]) {
+      mapped.password = parsed.password[0];
+    }
+    if (Array.isArray(parsed?.non_field_errors) && parsed.non_field_errors[0]) {
+      mapped.api = parsed.non_field_errors[0];
+    }
+
+    if (Object.keys(mapped).length === 0) {
+      mapped.api = 'Registration failed. Please check your details and try again.';
+    }
+
+    return mapped;
+  };
+
   const handleSubmit = async (e) => {
     e?.preventDefault();
     if (!validateStep2()) return;
     setIsLoading(true);
     try {
-      await registerUser({
-        full_name: formData.fullName,
+      const [firstName, ...rest] = formData.fullName.trim().split(/\s+/);
+      const lastName = rest.join(' ');
+      const response = await registerUser({
+        first_name: firstName || '',
+        last_name: lastName || '',
         username: formData.username,
         email: formData.email,
         phone: formData.phone,
         password: formData.password,
         password2: formData.confirmPassword,
-        role: formData.role,
       });
+
+      if (response?.requires_verification) {
+        setPendingEmail(response.email || formData.email);
+        setCurrentStep(3);
+        toast.success('OTP sent to your email. Enter it below to verify your account.');
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(false);
       navigate('/login', {
         state: {
@@ -179,7 +231,120 @@ const RegistrationForm = () => {
       });
     } catch (err) {
       setIsLoading(false);
-      setErrors({ api: err.message });
+      const mappedErrors = mapRegistrationApiErrors(err?.message || '');
+      setErrors(mappedErrors);
+
+      // If backend validation failed on step-1 fields, bring user back to step 1.
+      if (mappedErrors.email || mappedErrors.username || mappedErrors.phone) {
+        setCurrentStep(1);
+      }
+    }
+  };
+
+  const parseApiErrorMessage = (rawMessage, fallback) => {
+    try {
+      const parsed = JSON.parse(rawMessage);
+      return parsed.error || parsed.message || fallback;
+    } catch {
+      return rawMessage || fallback;
+    }
+  };
+
+  const completeAuth = (response) => {
+    localStorage.setItem('accessToken', response.access);
+    localStorage.setItem('refreshToken', response.refresh);
+    localStorage.setItem('userRole', response.user.role);
+    localStorage.setItem('userEmail', response.user.email);
+    localStorage.setItem('userName', response.user.first_name + ' ' + response.user.last_name);
+    localStorage.setItem('user', JSON.stringify(response.user));
+
+    if (response.user.role === 'admin') {
+      localStorage.setItem('adminAccessToken', response.access);
+      localStorage.setItem('adminRefreshToken', response.refresh);
+    } else {
+      localStorage.removeItem('adminAccessToken');
+      localStorage.removeItem('adminRefreshToken');
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setErrors({ api: 'Enter the 6-digit OTP sent to your email.' });
+      return;
+    }
+
+    setIsOtpLoading(true);
+    setErrors({});
+    try {
+      const response = await verifyEmailOtp({
+        email: pendingEmail,
+        otp: otpCode.trim(),
+      });
+
+      completeAuth(response);
+      toast.success('Email verified successfully. Welcome!');
+      navigate('/futsal-venues');
+    } catch (err) {
+      const message = parseApiErrorMessage(err?.message, 'OTP verification failed.');
+      setErrors({ api: message });
+      toast.error(message);
+    } finally {
+      setIsOtpLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!pendingEmail) return;
+
+    setIsResendingOtp(true);
+    setErrors({});
+    try {
+      const response = await resendEmailOtp({ email: pendingEmail });
+      toast.success(response?.message || 'OTP resent successfully.');
+    } catch (err) {
+      const message = parseApiErrorMessage(err?.message, 'Could not resend OTP.');
+      setErrors({ api: message });
+      toast.error(message);
+    } finally {
+      setIsResendingOtp(false);
+    }
+  };
+
+  const handleGoogleSignup = async (credential) => {
+    setErrors({});
+    setIsGoogleLoading(true);
+    try {
+      const response = await googleAuthUser(credential);
+
+      localStorage.setItem('accessToken', response.access);
+      localStorage.setItem('refreshToken', response.refresh);
+      localStorage.setItem('userRole', response.user.role);
+      localStorage.setItem('userEmail', response.user.email);
+      localStorage.setItem('userName', response.user.first_name + ' ' + response.user.last_name);
+      localStorage.setItem('user', JSON.stringify(response.user));
+
+      if (response.user.role === 'admin') {
+        localStorage.setItem('adminAccessToken', response.access);
+        localStorage.setItem('adminRefreshToken', response.refresh);
+      } else {
+        localStorage.removeItem('adminAccessToken');
+        localStorage.removeItem('adminRefreshToken');
+      }
+
+      toast.success(`Welcome, ${response.user.first_name || 'Player'}!`);
+
+      if (response.user.role === 'admin') {
+        navigate('/admin');
+      } else if (response.user.role === 'futsal_owner') {
+        navigate('/futsal-owner-dashboard');
+      } else {
+        navigate('/futsal-venues');
+      }
+    } catch (err) {
+      setErrors({ api: 'Google signup failed. Please try again.' });
+      toast.error('Google signup failed. Please try again.');
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -240,34 +405,6 @@ const RegistrationForm = () => {
             required
           />
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Register as</label>
-            <div className="flex gap-4">
-              <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer ${formData.role === 'player' ? 'border-primary bg-primary/10' : 'border-border'}`}>
-                <input
-                  type="radio"
-                  name="role"
-                  value="player"
-                  checked={formData.role === 'player'}
-                  onChange={handleInputChange}
-                  className="accent-primary"
-                />
-                Player
-              </label>
-              <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer ${formData.role === 'futsal_owner' ? 'border-primary bg-primary/10' : 'border-border'}`}>
-                <input
-                  type="radio"
-                  name="role"
-                  value="futsal_owner"
-                  checked={formData.role === 'futsal_owner'}
-                  onChange={handleInputChange}
-                  className="accent-primary"
-                />
-                Futsal Owner
-              </label>
-            </div>
-          </div>
-
           <Button
             type="button"
             variant="primary"
@@ -302,6 +439,7 @@ const RegistrationForm = () => {
               value={formData?.password}
               onChange={handleInputChange}
               error={errors?.password}
+              showPasswordToggle
               required
             />
             {formData?.password && (
@@ -335,6 +473,7 @@ const RegistrationForm = () => {
             value={formData?.confirmPassword}
             onChange={handleInputChange}
             error={errors?.confirmPassword}
+            showPasswordToggle
             required
           />
 
@@ -399,9 +538,66 @@ const RegistrationForm = () => {
           </div>
         </div>
       )}
+      {currentStep === 3 && (
+        <div className="space-y-4 md:space-y-5">
+          <div>
+            <h2 className="text-xl md:text-2xl font-semibold text-foreground mb-2">
+              Verify Email
+            </h2>
+            <p className="text-sm md:text-base text-muted-foreground">
+              We sent a 6-digit OTP to <span className="font-medium">{pendingEmail}</span>.
+            </p>
+          </div>
+
+          <Input
+            label="OTP Code"
+            type="text"
+            name="otp"
+            placeholder="Enter 6-digit OTP"
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            required
+          />
+
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              fullWidth
+              loading={isResendingOtp}
+              onClick={handleResendOtp}
+            >
+              Resend OTP
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              fullWidth
+              loading={isOtpLoading}
+              onClick={handleVerifyOtp}
+            >
+              Verify & Continue
+            </Button>
+          </div>
+        </div>
+      )}
       {errors.api && (
         <div className="text-error text-center text-sm mb-2">{errors.api}</div>
       )}
+
+      <div className="pt-1">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs text-muted-foreground">OR</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+        {isGoogleLoading ? (
+          <p className="text-sm text-center text-muted-foreground">Signing up with Google...</p>
+        ) : (
+          <GoogleAuthButton onCredential={handleGoogleSignup} buttonText="signup_with" />
+        )}
+      </div>
+
       <div className="text-center mt-6">
         <p className="text-sm md:text-base text-muted-foreground">
           Already have an account?{' '}

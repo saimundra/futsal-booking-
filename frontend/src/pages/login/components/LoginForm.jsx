@@ -4,8 +4,9 @@ import Input from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
 import { Checkbox } from '../../../components/ui/Checkbox';
 import Icon from '../../../components/AppIcon';
+import GoogleAuthButton from '../../../components/ui/GoogleAuthButton';
 
-const LoginForm = ({ onSubmit, error }) => {
+const LoginForm = ({ onSubmit, onGoogleAuth, error, isGoogleLoading = false }) => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
@@ -139,6 +140,20 @@ const LoginForm = ({ onSubmit, error }) => {
       >
         Sign In
       </Button>
+
+      <div className="pt-2">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs text-muted-foreground">OR</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+        {isGoogleLoading ? (
+          <p className="text-sm text-center text-muted-foreground">Signing in with Google...</p>
+        ) : (
+          <GoogleAuthButton onCredential={onGoogleAuth} buttonText="signin_with" />
+        )}
+      </div>
+
       <div className="text-center mt-6">
         <p className="text-sm md:text-base text-muted-foreground">
           Didn't have an account?{' '}

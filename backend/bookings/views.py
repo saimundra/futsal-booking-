@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from django.db.models import Sum, Q, Count
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -74,6 +75,10 @@ class FutsalViewSet(viewsets.ModelViewSet):
         city = self.request.query_params.get('city', None)
         if city:
             queryset = queryset.filter(city__icontains=city)
+
+        # Admins can always see all venues in list endpoints.
+        if self.request.user.is_authenticated and self.request.user.role == 'admin':
+            return queryset
         
         # Check if requesting own futsals (my=true parameter)
         my_param = self.request.query_params.get('my', None)
@@ -98,6 +103,18 @@ class FutsalViewSet(viewsets.ModelViewSet):
         return queryset
     
     def perform_create(self, serializer):
+        if self.request.user.role == 'admin':
+            owner = serializer.validated_data.get('owner')
+            if not owner:
+                raise ValidationError({'owner': 'Owner is required when admin creates a futsal venue.'})
+            serializer.save(owner=owner)
+            return
+        serializer.save(owner=self.request.user)
+
+    def perform_update(self, serializer):
+        if self.request.user.role == 'admin':
+            serializer.save()
+            return
         serializer.save(owner=self.request.user)
     
     def perform_destroy(self, instance):
@@ -349,15 +366,37 @@ class BookingViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': 'Only admins can view statistics'
             }, status=status.HTTP_403_FORBIDDEN)
+
+        month_param = request.query_params.get('month')
+        year_param = request.query_params.get('year')
+
+        revenue_queryset = Booking.objects.filter(payment_status='paid')
+
+        if month_param:
+            try:
+                month_value = int(month_param)
+            except ValueError:
+                return Response({'error': 'Month must be an integer between 1 and 12.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if month_value < 1 or month_value > 12:
+                return Response({'error': 'Month must be between 1 and 12.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            revenue_queryset = revenue_queryset.filter(date__month=month_value)
+
+        if year_param:
+            try:
+                year_value = int(year_param)
+            except ValueError:
+                return Response({'error': 'Year must be a valid integer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            revenue_queryset = revenue_queryset.filter(date__year=year_value)
         
         total_bookings = Booking.objects.count()
         confirmed_bookings = Booking.objects.filter(status='confirmed').count()
         pending_bookings = Booking.objects.filter(status='pending').count()
         cancelled_bookings = Booking.objects.filter(status='cancelled').count()
         
-        total_revenue = Booking.objects.filter(
-            payment_status='paid'
-        ).aggregate(Sum('amount'))['amount__sum'] or 0
+        total_revenue = revenue_queryset.aggregate(Sum('amount'))['amount__sum'] or 0
         
         total_hours = Booking.objects.filter(
             status__in=['confirmed', 'completed']

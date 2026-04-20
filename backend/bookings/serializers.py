@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from .models import Futsal, Court, Booking, CourtSchedule, Activity, FutsalImage
 from users.serializers import UserSerializer
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 
 class FutsalImageSerializer(serializers.ModelSerializer):
@@ -46,10 +49,16 @@ class FutsalSerializer(serializers.ModelSerializer):
 
 class FutsalCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating/updating futsal venues"""
+
+    owner = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role='futsal_owner'),
+        required=False
+    )
     
     class Meta:
         model = Futsal
         fields = [
+            'owner',
             'name', 'address', 'city', 'state', 'postal_code',
             'latitude', 'longitude', 'contact_phone', 'contact_email',
             'website', 'map_link', 'description', 'amenities', 'operating_hours',
